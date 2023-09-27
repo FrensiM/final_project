@@ -1,8 +1,10 @@
-from flask import Flask, url_for, render_template, request, redirect
+from flask import Flask, url_for, render_template, request, redirect, session
 from database import get_database
 from werkzeug.security import generate_password_hash, check_password_hash
+import os
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.urandom(24)
 
 @app.route("/")
 def index():
@@ -10,16 +12,37 @@ def index():
 
 @app.route("/login")
 def login():
-    return render_template('login.html')
+
+    error = None
+
+    if request.method == 'POST':
+        name = request.form['name']
+        password = request.form['password']
+        db = get_database()
+        user_cursor = db.execute('select * from users where name = ?', [name])
+        user = user_cursor.fetchone()
+
+        if user:
+            if check_password_hash(user['password'], password):
+                session['user'] = user['name']
+                return redirect(url_for('dashboard'))
+            else:
+                error = "Password did not match"
+    return render_template('login.html', loginerror = error)
 
 @app.route("/register", methods=["POST", "GET"])
 def register():
     if request.method == 'POST':
+        db = get_database()
         name = request.form['name']
         password = request.form['password']
         hashed_password = generate_password_hash(password)
 
-        db = get_database()
+        dbuser_cur = db.execute('select * from users where name = ?', [name])
+        existing_username = dbuser_cur.fetchone()
+        if existing_username:
+            return render_template('register.html', registererror = ', User already taken try new username/email')
+        
         db.execute('INSERT INTO users( name, password) values (?, ?)',[name, hashed_password])
         db.commit()
         return redirect(url_for('index'))
